@@ -44,4 +44,4 @@ Sua file `utils/Pintos.pm`
 
 Go `make check` tai `src/vm`
 
-### Lam tuong tu doi voi filesys
+## Lam tuong tu doi voi filesys
