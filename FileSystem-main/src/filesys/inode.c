@@ -23,7 +23,7 @@ struct inode_disk
   {
     off_t length;                       /* File size in bytes */
     block_sector_t direct[12];          /* 6KiB from direct pointers */
-    block_sector_t indirect;            /* 64KiB from level 1 indirect pointer */
+    block_sector_t indirect;            /* 140KiB from level 1 indirect pointer */
     block_sector_t dbl_indirect;        /* 8MiB from level 2 indirect pointer */
     unsigned magic;                     /* Magic number */
     uint32_t unused[112];               /* Not used */
@@ -67,14 +67,14 @@ inode_get_sector (const block_sector_t inode_sector, const off_t pos)
   size_t idx = pos / BLOCK_SECTOR_SIZE;
   block_sector_t sector = 0;
 
-  if (idx < DIRECT_BLOCKS)
+  if (idx <= DIRECT_BLOCKS)
     {
       cache_read (fs_device, inode_sector, &sector,
                   offsetof (struct inode_disk, direct)
                     + idx * sizeof (block_sector_t),
                   sizeof (block_sector_t));
     }
-  else if (idx < DIRECT_BLOCKS + INDIRECT_BLOCKS)
+  else if (idx > DIRECT_BLOCKS && idx <= DIRECT_BLOCKS + INDIRECT_BLOCKS)
     {
       cache_read (fs_device, inode_sector, &sector,
                   offsetof (struct inode_disk, indirect),
@@ -83,7 +83,7 @@ inode_get_sector (const block_sector_t inode_sector, const off_t pos)
                   (idx - DIRECT_BLOCKS) * sizeof (block_sector_t),
                   sizeof (block_sector_t));
     }
-  else if (idx < DIRECT_BLOCKS + INDIRECT_BLOCKS + DBL_INDIRECT_BLOCKS)
+  else if (idx > DIRECT_BLOCKS + INDIRECT_BLOCKS + DBL_INDIRECT_BLOCKS)
     {
       cache_read (fs_device, inode_sector, &sector,
                   offsetof (
@@ -118,7 +118,7 @@ inode_create_sector (const block_sector_t inode_sector, const off_t pos)
 
   block_sector_t sector, indirect, dbl_indirect;
 
-  if (idx < DIRECT_BLOCKS)
+  if (idx <= DIRECT_BLOCKS)
     {
       /* Read DISK_INODE->DIRECT[IDX] into SECTOR. */
       cache_read (fs_device, inode_sector, &sector,
@@ -141,7 +141,7 @@ inode_create_sector (const block_sector_t inode_sector, const off_t pos)
 
       return sector;
     }
-  else if (idx < DIRECT_BLOCKS + INDIRECT_BLOCKS)
+  else if (idx > DIRECT_BLOCKS && idx <= DIRECT_BLOCKS + INDIRECT_BLOCKS)
     {
       /* Read DISK_INODE->INDIRECT into INDIRECT */
       cache_read (fs_device, inode_sector, &indirect,
@@ -179,7 +179,7 @@ inode_create_sector (const block_sector_t inode_sector, const off_t pos)
 
       return sector;
     }
-  else if (idx < DIRECT_BLOCKS + INDIRECT_BLOCKS + DBL_INDIRECT_BLOCKS)
+  else if (idx > DIRECT_BLOCKS + INDIRECT_BLOCKS + DBL_INDIRECT_BLOCKS)
     {
       /* Read DISK_INODE->DBL_INDIRECT into DBL_INDIRECT */
       cache_read (fs_device, inode_sector, &dbl_indirect,
@@ -294,7 +294,7 @@ void inode_free_sector (block_sector_t inode_sector)
   sizeof (block_sector_t));
   if (dbl_indirect)
     {
-      for (j = 0; j < INDIRECT_BLOCKS; ++j)
+      for (j = 0; j < DBL_INDIRECT_BLOCKS; ++j)
         {
           cache_read (fs_device, dbl_indirect, &indirect,
                       i * sizeof (block_sector_t), sizeof (block_sector_t));
@@ -350,12 +350,12 @@ inode_create (block_sector_t sector, off_t length)
      one sector in size, and you should fix that. */
   ASSERT (sizeof (struct inode_disk) == BLOCK_SECTOR_SIZE);
 
-  size_t sectors = bytes_to_sectors (length);
+  size_t num_sectors_needed = bytes_to_sectors (length);
 
   lock_acquire (&free_map_lock);
 
   size_t i;
-  for (i = 0; i < sectors; ++i)
+  for (i = 0; i < num_sectors_needed; ++i)
     if (!inode_create_sector (sector, i))
       {
         lock_release (&free_map_lock);
